@@ -494,7 +494,40 @@ class Solver(object):
                 self.update_lr(g_lr, d_lr)
                 print('Decayed learning rates, g_lr: {}, d_lr: {}.'.format(g_lr, d_lr))
 
+    def predict(self):
+        model_path = os.path.join(self.model_save_dir, "8400-G.ckpt")
+        self.G.load_state_dict(torch.load(model_path, map_location=lambda storage, loc: storage))
+        sketch_path = "33.jpg"
+        try:
+            # Load the sketch image
+            sketch_image = Image.open(sketch_path).convert("RGB")
 
+            # Preprocess the sketch (resize, normalize, etc.)
+            transform = T.Compose([
+                T.Resize((self.image_size)),  # Adjust based on model input size
+                T.ToTensor(),
+                T.Normalize(mean=(0.5, 5.0, 0.5), std=(0.5, 0.5, 0.5)),
+            ])
+            sketch_tensor = transform(sketch_image).unsqueeze(0)  # Add batch dimension and move to device
+            c = torch.ones(1, self.c_dim) * 0.5
+            sketch_tensor = sketch_tensor.to("cuda")  # Move the sketch tensor to GPU
+            c = c.to("cuda")
+            with torch.no_grad():  # Disable gradient calculation for prediction
+                x_fake = self.G(sketch_tensor, c)  # Use self.G instead of self.main (if applicable)
+
+            # print("HI")
+
+            # Denormalize (assuming you have a denorm function)
+            x_fake = self.denorm(x_fake.data.cpu())  # Denormalize the translated image
+
+            # Save the translated image
+            result_path = os.path.join(self.result_dir, "translated_image.jpg")
+            save_image(x_fake, result_path, nrow=1, padding=0)
+
+        except Exception as e:
+            print(f"Error during prediction: {e}")
+            return None
+    
     def test(self):
         """Translate images using StarGAN trained on a single dataset."""
         # Load the trained generator.
