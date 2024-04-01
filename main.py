@@ -66,6 +66,8 @@ def main(config):
     elif config.mode == 'test':
         if config.dataset in ['CelebA', 'RaFD']:
             solver.test()
+    elif config.mode == 'predict:
+        solver.predict()
     elif config.mode == 'test_gui':
         if config.dataset in ['CelebA', 'RaFD']:
             sps.vp_start_gui(solver)
