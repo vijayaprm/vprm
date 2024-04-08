@@ -495,38 +495,74 @@ class Solver(object):
                 print('Decayed learning rates, g_lr: {}, d_lr: {}.'.format(g_lr, d_lr))
 
     def predict(self):
-        model_path = os.path.join(self.model_save_dir, "8400-G.ckpt")
+        descriptions = self.get_descriptions_from_file("test.txt")
+
+        model_path = os.path.join(self.model_save_dir, "18100-G.ckpt")
         self.G.load_state_dict(torch.load(model_path, map_location=lambda storage, loc: storage))
-        sketch_path = "33.jpg"
-        try:
-            # Load the sketch image
-            sketch_image = Image.open(sketch_path).convert("RGB")
+        for filename in os.listdir("testo"):
+            if filename.endswith(".jpg") or filename.endswith(".jpeg") or filename.endswith(".png"):
+                try:
+                    sketch_path = os.path.join("testo", filename)
+                    # Load the sketch image
+                    sketch_image = Image.open(sketch_path).convert("RGB")
 
-            # Preprocess the sketch (resize, normalize, etc.)
-            transform = T.Compose([
-                T.Resize((self.image_size)),  # Adjust based on model input size
-                T.ToTensor(),
-                T.Normalize(mean=(0.5, 5.0, 0.5), std=(0.5, 0.5, 0.5)),
-            ])
-            sketch_tensor = transform(sketch_image).unsqueeze(0)  # Add batch dimension and move to device
-            c = torch.ones(1, self.c_dim) * 0.5
-            sketch_tensor = sketch_tensor.to("cuda")  # Move the sketch tensor to GPU
-            c = c.to("cuda")
-            with torch.no_grad():  # Disable gradient calculation for prediction
-                x_fake = self.G(sketch_tensor, c)  # Use self.G instead of self.main (if applicable)
+                    # Preprocess the sketch (resize, normalize, etc.)
+                    transform = T.Compose([
+                        T.Resize((self.image_size)),  # Adjust based on model input size
+                        T.ToTensor(),
+                        T.Normalize(mean=(0.5, 5.0, 0.5), std=(0.5, 0.5, 0.5)),
+                    ])
+                    sketch_tensor = transform(sketch_image).unsqueeze(0)  # Add batch dimension and move to device
+                    c = torch.ones(1, self.c_dim) * 0.5
+                    print(c)
+                    sketch_tensor = sketch_tensor.to("cuda")  # Move the sketch tensor to GPU
+                    c = c.to("cuda")
+                    with torch.no_grad():  # Disable gradient calculation for prediction
+                        x_fake = self.G(sketch_tensor, c)  # Use self.G instead of self.main (if applicable)
+                    print(x_fake.shape)
 
-            # print("HI")
-
-            # Denormalize (assuming you have a denorm function)
-            x_fake = self.denorm(x_fake.data.cpu())  # Denormalize the translated image
-
-            # Save the translated image
-            result_path = os.path.join(self.result_dir, "translated_image.jpg")
-            save_image(x_fake, result_path, nrow=1, padding=0)
-
-        except Exception as e:
-            print(f"Error during prediction: {e}")
-            return None
+                    x_fake = self.denorm(x_fake.data.cpu())
+                    # Save the translated image
+                    result_path = os.path.join(self.result_dir, f"{filename.split('.')[0]}_translated.jpg")
+                    # save_image(x_fake, result_path, nrow=1, padding=0)
+                    # print("hi")
+                    mode = 'man'
+                    n_step=20
+                    n_lr=2
+                    step = 10*n_step
+                    ini_lr = 10**(-n_lr)
+                    lambda_l2=1.0
+                    lambda_feat=2.0
+                    lambda_enc=5
+                    lambda_clip=1.0
+                    description = descriptions.get(filename, "young")
+                    print(description)
+                    text_inputs = torch.cat([clip.tokenize(description)]).cuda()
+                    os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+                    model_name = 'styleganinv_ffhq256'
+                    inverter = StyleGANInverter(model_name,
+                                         mode=mode,
+                                         learning_rate=ini_lr,
+                                         iteration=step,
+                                         reconstruction_loss_weight=lambda_l2,
+                                         perceptual_loss_weight=lambda_feat,
+                                         regularization_loss_weight=lambda_enc,
+                                         clip_loss_weight=lambda_clip,
+                                         description=description)
+                    image_size = inverter.G.resolution
+                    image = x_fake.squeeze().permute(1, 2, 0).detach().cpu().numpy()  # Convert tensor to numpy array
+                    image = (image * 255).astype(np.uint8) 
+                    image = resize_image(np.array(image), (image_size, image_size))
+                    _, viz_results = inverter.easy_invert(image, 1)
+                    final_result = viz_results[-1]
+                    print("hoi")
+                    final_result_image = Image.fromarray(final_result)
+                    output_file_path = os.path.join("testo_predicted", f"{filename.split('.')[0]}_predicted.jpg")
+                    # Save the image
+                    final_result_image.save(output_file_path)
+                except Exception as e:
+                    print(f"Error during prediction for {filename}: {e}")
+                    continue
     
     def test(self):
         """Translate images using StarGAN trained on a single dataset."""
